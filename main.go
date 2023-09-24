@@ -126,8 +126,9 @@ type ItemBlank struct {
 }
 
 type badMessage struct {
-	date time.Time
-	data []byte
+	date  time.Time
+	data  []byte
+	valid bool
 }
 
 var ErrMissingOrderData = errors.New("incoming order has missing data")
@@ -210,14 +211,13 @@ func main() {
 	fileName := "search.html"
 	tmpl, _ := template.ParseFiles(fileName)
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		go handler(rw, r, cache, mu, tmpl)
+		handler(rw, r, cache, mu, tmpl)
 	})
 
 	// Subscription to the NATS Streaming channel, specifying the function to handle incoming messages
 	sc.Subscribe("model", func(m *stan.Msg) {
 		go processMessage(m, conn, ch, logChan)
 	})
-
 	// Starting the HTTP server to handle search requests
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

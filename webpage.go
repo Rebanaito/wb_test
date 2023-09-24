@@ -34,7 +34,7 @@ func searchResults(rw http.ResponseWriter, r *http.Request, cache map[string]Ord
 			table, th, td {
 				border: 1px solid black;
 				text-align: center;
-				padding: 10px;
+				padding: 5px;
 			}
 		</style>
 		<form action="/search">

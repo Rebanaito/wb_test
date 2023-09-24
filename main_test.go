@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"sync"
 	"testing"
 	"time"
@@ -32,11 +33,14 @@ func TestMain(t *testing.T) {
 	var mu = &sync.Mutex{}
 	var ch = make(chan *Order)
 	var logChan = make(chan badMessage)
-	var wg sync.WaitGroup
 	var cache = make(map[string]Order)
+	var wg sync.WaitGroup
 	sc.Subscribe("model", func(m *stan.Msg) {
 		wg.Add(1)
-		go processMessage(m, conn, &wg, ch, logChan)
+		go func() {
+			processMessage(m, conn, ch, logChan)
+			wg.Done()
+		}()
 	})
 	go writeToCache(mu, cache, ch)
 	go logBadMessages(logChan)
@@ -48,23 +52,41 @@ func TestMain(t *testing.T) {
 			time.Sleep(2 * time.Millisecond)
 		}
 	}
-	var newCache = make(map[string]Order)
-	restoreCache(newCache, conn, context.Background(), mu)
+	wg.Wait()
+	data, _ := os.ReadFile("messages/invalid_field.txt")
+	sc.Publish("model", data)
+	wg.Wait()
+	invalid, _ := os.ReadDir("logs/invalid/")
+	if len(invalid) != 1 {
+		t.Fatalf("Invalid messages should have been logged. Need: 1, have: %d", len(invalid))
+	}
+	for _, file := range invalid {
+		os.RemoveAll(path.Join([]string{"logs/invalid/", file.Name()}...))
+	}
 	count := 0
 	for key := range cache {
 		_ = key
 		count++
 	}
 	if count != 1000 {
-		t.Fatalf("cache is missing some orders after receiving messages")
+		t.Fatalf("cache is supposed to be storing 1000 orders, have: %d", count)
 	}
+	var newCache = make(map[string]Order)
+	restoreCache(newCache, conn, context.Background(), mu)
 	count = 0
 	for key := range newCache {
 		_ = key
 		count++
 	}
 	if count != 1000 {
-		t.Fatalf("cache is missing some orders after restoring from the DB")
+		t.Fatalf("database is supposed to be storing 1000 orders, have: %d", count)
 	}
-
+	files, _ := os.ReadDir("logs/failed/")
+	failed := len(files)
+	for _, file := range files {
+		os.RemoveAll(path.Join([]string{"logs/failed/", file.Name()}...))
+	}
+	if failed != 1000 {
+		t.Fatalf("not all errors were logged, must have 1000 invalid orders in log/invalid, have %d", failed)
+	}
 }

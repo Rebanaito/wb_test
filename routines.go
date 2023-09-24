@@ -39,18 +39,19 @@ func processMessage(m *stan.Msg, conn *pgxpool.Pool, ch chan *Order, logChan cha
 			insert(&order, conn, context.Background(), message, time, ch, logChan)
 		} else {
 			message = append([]byte(fmt.Sprintf("Invalid order: %v\n", errors)), message...)
-			logChan <- badMessage{time, message}
+			logChan <- badMessage{time, message, false}
 		}
 	} else {
 		message = append([]byte(fmt.Sprintf("JSON parsing error: %v\n", err)), message...)
-		logChan <- badMessage{time, message}
+		logChan <- badMessage{time, message, false}
 	}
 }
 
 // Function that adds new entries to the database. In case of an error occuring midway (on one of the tables),
 // the function rolls back and cleans up the incomplete data it just added and logs the error
 func insert(order *Order, conn *pgxpool.Pool, ctx context.Context, message []byte, time time.Time, ch chan *Order, logChan chan badMessage) {
-	_, err := conn.Exec(ctx, `INSERT INTO orders (order_uid, track_number, entry, locale,
+	var err error
+	_, err = conn.Exec(ctx, `INSERT INTO orders (order_uid, track_number, entry, locale,
 								internal_signature, customer_id, delivery_service, shardkey,
 								sm_id, date_created, oof_shard) VALUES ($1, $2, $3, $4, $5,
 								$6, $7, $8, $9, $10, $11)`, order.Order_uid, order.Track_number,
@@ -82,15 +83,14 @@ func insert(order *Order, conn *pgxpool.Pool, ctx context.Context, message []byt
 					}
 				}
 			} else {
-				err = revertInserts(order.Order_uid, conn, ctx, 2)
+				revertInserts(order.Order_uid, conn, ctx, 2)
 			}
 		} else {
-			err = revertInserts(order.Order_uid, conn, ctx, 1)
+			revertInserts(order.Order_uid, conn, ctx, 1)
 		}
 	}
 	if err != nil {
-		message = append([]byte(fmt.Sprintf("Query failed: %v\n", err)), message...)
-		logChan <- badMessage{time, message}
+		logChan <- badMessage{time, message, true}
 		ch <- nil
 	} else {
 		ch <- order
@@ -124,8 +124,14 @@ func logBadMessages(logChan chan badMessage) {
 		year, month, day := log.date.Date()
 		hour, minute, seconds := log.date.Clock()
 		nano := log.date.Nanosecond()
-		name := fmt.Sprintf("./logs/%s-%s-%s_%s:%s:%s:%s", strconv.Itoa(year), strconv.Itoa(int(month)),
-			strconv.Itoa(day), strconv.Itoa(hour), strconv.Itoa(minute), strconv.Itoa(seconds), strconv.Itoa(nano))
+		var name string
+		if log.valid {
+			name = fmt.Sprintf("./logs/failed/%s-%s-%s_%s:%s:%s:%s", strconv.Itoa(year), strconv.Itoa(int(month)),
+				strconv.Itoa(day), strconv.Itoa(hour), strconv.Itoa(minute), strconv.Itoa(seconds), strconv.Itoa(nano))
+		} else {
+			name = fmt.Sprintf("./logs/invalid/%s-%s-%s_%s:%s:%s:%s", strconv.Itoa(year), strconv.Itoa(int(month)),
+				strconv.Itoa(day), strconv.Itoa(hour), strconv.Itoa(minute), strconv.Itoa(seconds), strconv.Itoa(nano))
+		}
 		err := os.WriteFile(name, log.data, 0644)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Log error: %v\n", err)
