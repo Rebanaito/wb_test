@@ -13,7 +13,7 @@ import (
 )
 
 // Function for message processing
-func processMessage(m *stan.Msg, conn *pgxpool.Pool, ch chan *Order, logChan chan badMessage) {
+func processMessage(m *stan.Msg, conn *pgxpool.Pool, orderChan chan *Order, logChan chan badMessage) {
 	// Datetime and raw byte data are stored for potential logging
 	time := time.Now()
 	message := m.Data
@@ -36,7 +36,7 @@ func processMessage(m *stan.Msg, conn *pgxpool.Pool, ch chan *Order, logChan cha
 			sanitizeOrder(order)
 
 			// Inserting the validated and sanitized order into the database
-			insert(&order, conn, context.Background(), message, time, ch, logChan)
+			insert(&order, conn, context.Background(), message, time, orderChan, logChan)
 		} else {
 			message = append([]byte(fmt.Sprintf("Invalid order: %v\n", errors)), message...)
 			logChan <- badMessage{time, message, false}
@@ -49,7 +49,7 @@ func processMessage(m *stan.Msg, conn *pgxpool.Pool, ch chan *Order, logChan cha
 
 // Function that adds new entries to the database. In case of an error occuring midway (on one of the tables),
 // the function rolls back and cleans up the incomplete data it just added and logs the error
-func insert(order *Order, conn *pgxpool.Pool, ctx context.Context, message []byte, time time.Time, ch chan *Order, logChan chan badMessage) {
+func insert(order *Order, conn *pgxpool.Pool, ctx context.Context, message []byte, time time.Time, orderChan chan *Order, logChan chan badMessage) {
 	var err error
 	_, err = conn.Exec(ctx, `INSERT INTO orders (order_uid, track_number, entry, locale,
 								internal_signature, customer_id, delivery_service, shardkey,
@@ -91,9 +91,9 @@ func insert(order *Order, conn *pgxpool.Pool, ctx context.Context, message []byt
 	}
 	if err != nil {
 		logChan <- badMessage{time, message, true}
-		ch <- nil
+		orderChan <- nil
 	} else {
-		ch <- order
+		orderChan <- order
 	}
 }
 

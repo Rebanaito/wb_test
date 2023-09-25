@@ -9,7 +9,7 @@ build:
 rebuild: clean build
 
 test:
-	go test -v -count=1 ./...
+	go test -v -short -race -count=1 ./...
 
 .PHONY: cover
 

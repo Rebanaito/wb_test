@@ -49,7 +49,7 @@ func TestMain(t *testing.T) {
 			name := fmt.Sprintf("mock/orders/mock_data_%d.json", i)
 			data, _ := os.ReadFile(name)
 			sc.Publish("model", data)
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(1 * time.Millisecond)
 		}
 	}
 	wg.Wait()

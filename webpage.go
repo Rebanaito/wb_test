@@ -1,12 +1,35 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"time"
 )
+
+func server(cache map[string]Order, mu *sync.Mutex, tmpl *template.Template) {
+	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		handler(rw, r, cache, mu, tmpl)
+	})
+
+	// Starting listener in a routine to not get stuck so that we can handle SIGINT gracefully
+	go func() {
+		log.Fatal(http.ListenAndServe(":8080", nil))
+	}()
+
+	// Channel to listen for SIGINT
+	kill := make(chan os.Signal, 2)
+	signal.Notify(kill, os.Interrupt)
+	<-kill
+
+	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+}
 
 // Handler function for HTTP requests. All incoming requests are directed to the same search page.
 // Once the user submits an order_uid to search for, the searchResults function is executed
@@ -39,7 +62,7 @@ func searchResults(rw http.ResponseWriter, r *http.Request, cache map[string]Ord
 		</style>
 		<form action="/search">
 			<label for="order_uid">Order ID: </label>
-			<input type="text" id="order_uid" name="order_uid" value="">
+			<input type="text" id="order_uid" name="order_uid" value="" pattern="[a-zA-Z0-9]+" required>
 			<input type="submit" value="Search"><br>
 		</form>
 		<h3>Order ID: %s</h3><br>

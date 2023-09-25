@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"log"
-	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -197,27 +195,25 @@ func main() {
 	// 'logChan' is the channel we use to pass information about invalid messages to be logged
 	var cache = make(map[string]Order)
 	var mu = &sync.Mutex{}
-	var ch = make(chan *Order)
+	var orderChan = make(chan *Order)
 	var logChan = make(chan badMessage)
 
 	// Restoring cache from the database
 	restoreCache(cache, conn, context.Background(), mu)
 
 	// Two routines - first one writes to cache, second one logs invalid messages
-	go writeToCache(mu, cache, ch)
+	go writeToCache(mu, cache, orderChan)
 	go logBadMessages(logChan)
-
-	// Specifying what function should handle incoming HTTP requests
-	fileName := "search.html"
-	tmpl, _ := template.ParseFiles(fileName)
-	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		handler(rw, r, cache, mu, tmpl)
-	})
 
 	// Subscription to the NATS Streaming channel, specifying the function to handle incoming messages
 	sc.Subscribe("model", func(m *stan.Msg) {
-		go processMessage(m, conn, ch, logChan)
+		go processMessage(m, conn, orderChan, logChan)
 	})
+
+	// Template for the starting page
+	fileName := "search.html"
+	tmpl, _ := template.ParseFiles(fileName)
+
 	// Starting the HTTP server to handle search requests
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	server(cache, mu, tmpl)
 }
