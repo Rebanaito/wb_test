@@ -195,7 +195,7 @@ func searchResults(rw http.ResponseWriter, r *http.Request, cache map[string]Ord
 		</style>
 		<form action="/search">
 			<label for="order_uid">Order ID: </label>
-			<input type="text" id="order_uid" name="order_uid" value="">
+			<input type="text" id="order_uid" name="order_uid" value="" pattern="[a-zA-Z0-9]+" required>
 			<input type="submit" value="Search"><br>
 		</form>
 		<h3>Couldn't find an order with this ID.</h3></html>`
